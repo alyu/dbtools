@@ -57,15 +57,15 @@ download_packages() {
 
   if [ "$os" == "redhat" ]
   then
-    wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.1/+download/galera-23.2.1-1.rhel5.x86_64.rpm"
+    wsrep_provider_dn="https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm"
     wsrep_provider_file=${wsrep_provider_dn##*/}
     xtra_packages="openssl psmisc libaio rsync nc wget"
     wsrep_provider=/usr/lib64/galera/libgalera_smm.so
     stop_fw="service iptables stop"
     [ $user != "root" ] && user=root && ssh_key=/root/.ssh/id_rsa.pub
   else
-    mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.23-23.6/+download/mysql-5.5.23_wsrep_23.6-linux-x86_64.tar.gz"
-    wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.1/+download/galera-23.2.1-amd64.deb"
+    mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz"
+    wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-amd64.deb"
     xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
     wsrep_provider=/usr/lib/galera/libgalera_smm.so
     [ $user != "root" ] && ssh_key=/home/$user/.ssh/id_rsa.pub
@@ -154,6 +154,8 @@ rm -rf $datadir/*
 mkdir -p $installdir
 rm -rf $installdir/${mysql_galera_tar%.tar.gz}
 zcat \$root_dir/repo/$mysql_galera_tar | tar xf - -C $installdir
+# remove symlink
+rm -f $basedir
 ln -sf $installdir/${mysql_galera_tar%.tar.gz} $basedir
 h=(\$(hostname -I))
 sed -i "s|^wsrep_node_address.*=*|wsrep_node_address = \${h[1]}|" \$root_dir/$my_cnf
