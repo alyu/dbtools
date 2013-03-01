@@ -334,7 +334,7 @@ EOF
     h=${hosts[0]}
     echo "*** Securing MySQL ($h)..."
     scp -i $private_key -q -P $port secure.sql $user@$h:~/
-    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql; rm ~/secure.sql"
+    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql; $sudo rm ~/secure.sql"
   fi
 
   cd ..
