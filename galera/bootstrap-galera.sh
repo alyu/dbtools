@@ -23,27 +23,42 @@ root_dir=${root_dir%/*}
 echo "root_dir=$root_dir"
 cd $root_dir/galera
 
+shopt -s expand_aliases
+alias sed="sed -i"
+[[ $OSTYPE =~ ^darwin ]] && alias sed="sed -i ''"
+
 installdir=/usr/local
-datadir=/var/lib/mysql
+datadir=/usr/local/lib/mysql
 rundir=/var/run/mysqld
 innodb_buffer_pool_size=2G
 innodb_log_file_size=1G
 my_cnf=etc/my.cnf
 mysql_service=mysql
 stop_fw="service ufw stop"
+stop_fw_redhat="service iptables stop"
 
 wsrep_cluster_name=my_galera_cluster
 wsrep_sst_method=rsync
 wsrep_slave_threads=1
 
 os=ubuntu
-user=ubuntu
+user="$USER"
 ssh_key=/home/ubuntu/.ssh/id_rsa.pub
 port=22
 
+stagingdir=.stage
 hosts=""
 [ -e etc/config ] && . etc/config
-[ -e etc/hosts ] && hosts=`cat etc/hosts`
+[ -e $stagingdir/etc/hosts ] && hosts=($(cat $stagingdir/etc/hosts))
+
+mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz"
+wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-amd64.deb"
+wsrep_provider_dn_redhat="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-1.rhel5.x86_64.rpm"
+xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
+xtra_packages_redhat="openssl psmisc libaio rsync nc wget"
+wsrep_provider=/usr/lib/galera/libgalera_smm.so
+wsrep_provider_redhat=/usr/lib64/galera/libgalera_smm.so
+[ $user != "root" ] && ssh_key=/home/$user/.ssh/id_rsa.pub
 
 ask() {
   read -p "$1" x
@@ -55,21 +70,13 @@ download_packages() {
   read -p "What is your OS on your DB nodes [ubuntu|redhat]: ($os) " x
   [ ! -z $x ] && os=$x
 
-  mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz"
-
   if [ "$os" == "redhat" ]
   then
-    wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-1.rhel5.x86_64.rpm"
-    wsrep_provider_file=${wsrep_provider_dn##*/}
-    xtra_packages="openssl psmisc libaio rsync nc wget"
-    wsrep_provider=/usr/lib64/galera/libgalera_smm.so
-    stop_fw="service iptables stop"
+    wsrep_provider_dn="$wsrep_provider_dn_redhat"
+    xtra_packages="$xtra_packages_redhat"
+    wsrep_provider="$wsrep_provider_redhat"
+    stop_fw="$stop_fw_redhat"
     [ $user != "root" ] && user=root && ssh_key=/root/.ssh/id_rsa.pub
-  else
-    wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-amd64.deb"
-    xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
-    wsrep_provider=/usr/lib/galera/libgalera_smm.so
-    [ $user != "root" ] && ssh_key=/home/$user/.ssh/id_rsa.pub
   fi
 
   read -p "Galera MySQL tarball ($mysql_galera_dn): " x
@@ -82,10 +89,10 @@ download_packages() {
   wsrep_provider_file=${wsrep_provider_dn##*/}
 
   echo "Downloading packages..."
-
-  mkdir -p repo
-  [ ! -f "repo/$mysql_galera_tar" ] && wget --tries=3 --no-check-certificate -O repo/$mysql_galera_tar $mysql_galera_dn
-  [ ! -f "repo/$wsrep_provider_file" ] && wget --tries=3 --no-check-certificate -O repo/$wsrep_provider_file $wsrep_provider_dn
+  repo=$stagingdir/repo
+  mkdir -p $repo
+  [ ! -f "$repo/$mysql_galera_tar" ] && wget --tries=3 --no-check-certificate -O $repo/$mysql_galera_tar $mysql_galera_dn
+  [ ! -f "$repo/$wsrep_provider_file" ] && wget --tries=3 --no-check-certificate -O $repo/$wsrep_provider_file $wsrep_provider_dn
 }
 
 gen_scripts() {
@@ -97,76 +104,79 @@ gen_scripts() {
   read -p "MySQL data dir ($datadir): " x
   [ ! -z "$x" ] && datadir=$x
 
-  read -p "InnoDB buffer pools size ($innodb_buffer_pool_size): " x
+  read -p "InnoDB buffer pool size ($innodb_buffer_pool_size): " x
   [ ! -z "$x" ] && innodb_buffer_pool_size=$x
 
   read -p "InnoDB log file size ($innodb_log_file_size): " x
   [ ! -z "$x" ] && innodb_log_file_size=$x
 
   # modify my.cnf
-  sed -i "s|^basedir.*=*|basedir = $installdir/mysql|g" $my_cnf
-  sed -i "s|^datadir.*=*|datadir = $datadir|g" $my_cnf
-  sed -i "s|^innodb_buffer_pool_size.*=*|innodb_buffer_pool_size = $innodb_buffer_pool_size|" $my_cnf
-  sed -i "s|^innodb_log_file_size.*=*|innodb_log_file_size = $innodb_log_file_size|" $my_cnf
+  etcdir=$stagingdir/etc
+  sed "s|^basedir.*=*|basedir = $installdir/mysql|g" $etcdir/my.cnf
+  sed "s|^datadir.*=*|datadir = $datadir|g" $etcdir/my.cnf
+  sed "s|^innodb_buffer_pool_size.*=*|innodb_buffer_pool_size = $innodb_buffer_pool_size|" $etcdir/my.cnf
+  sed "s|^innodb_log_file_size.*=*|innodb_log_file_size = $innodb_log_file_size|" $etcdir/my.cnf
 
   # generate scripts
-  mkdir -p bin
+  bindir=$stagingdir/bin
+  mkdir -p $bindir
 
-  cat > "bin/install_wsrep.sh" << EOF
+  cat > "$bindir/install_wsrep.sh" << EOF
 #!/bin/bash
+
+echo "*** Installing Galera wsrep provider"
 os="$os"
 
-#rel_dir=`dirname "$0"`
-#root_dir=`cd $rel_dir;pwd`
-#root_dir=${root_dir%/*}
 root_dir=\$(dirname \$PWD/\$(dirname "\$BASH_SOURCE"))
-echo "-- Killing any MySQL server running..."
-killall -9 mysqld mysqld_safe > /dev/null 2>&1
-echo "Wiping datadir and existing my.cnf files..."
-rm -rf $datadir/*
-rm -rf /etc/my.cnf /etc/mysql
 if [ "\$os" == "ubuntu" ]
 then
-apt-get -y remove --purge mysql-server mysql-client mysql-common ${wsrep_provider_file%.*} &> /dev/null
-apt-get -y autoremove
-apt-get -y autoclean
-apt-get -y --force-yes install $xtra_packages
+dpkg -r galera
+dpkg -p galera
 dpkg -i \$root_dir/repo/$wsrep_provider_file
 apt-get -f install
 else
-yum -y remove mysql mysql-libs mysql-devel mysql-server mysql-bench ${wsrep_provider_file%.*} &> /dev/null
-yum -y install $xtra_packages
+yum -y remove galera
 yum -y localinstall \$root_dir/repo/$wsrep_provider_file
 fi
-#rm -rf ${wsrep_provider%/*}
 EOF
 
-  cat > "bin/install_mysql_galera.sh" << EOF
+  cat > "$bindir/install_mysql_galera.sh" << EOF
 #!/bin/bash
+
+echo "*** Installing Galera MySQL"
+os="$os"
+
 rel_dir=`dirname "$0"`
-#root_dir=`cd $rel_dir;pwd`
-#root_dir=${root_dir%/*}
+
 root_dir=\$(dirname \$PWD/\$(dirname "\$BASH_SOURCE"))
-echo "-- Killing any MySQL server running..."
-#service $mysql_service stop > /dev/null 2>&1
-killall -9 mysqld mysqld_safe > /dev/null 2>&1
+echo "Killing any MySQL server running..."
+killall -9 mysqld_safe mysqld rsync
 echo "Wiping datadir and existing my.cnf files..."
 rm -rf $datadir/*
+rm -rf /etc/my.cnf /etc/mysql
+
 mkdir -p $installdir
 rm -rf $installdir/${mysql_galera_tar%.tar.gz}
+if [ "\$os" == "ubuntu" ]
+then
+apt-get -y remove --purge mysql-server mysql-client mysql-common
+apt-get -y autoremove
+apt-get -y autoclean
+apt-get -y --force-yes install $xtra_packages
+else
+yum -y remove mysql mysql-libs mysql-devel mysql-server mysql-bench
+yum -y install $xtra_packages
+fi
+
 zcat \$root_dir/repo/$mysql_galera_tar | tar xf - -C $installdir
-# remove symlink
-rm -f $basedir
 ln -sf $installdir/${mysql_galera_tar%.tar.gz} $basedir
-h=(\$(hostname -I))
-sed -i "s|^wsrep_node_address.*=*|wsrep_node_address = \${h[1]}|" \$root_dir/$my_cnf
 
 cp -f \$root_dir/etc/my.cnf /etc/
 cp -f $basedir/support-files/mysql.server /etc/init.d/$mysql_service
 mkdir -p $datadir
 
 # mysql user
-\`id mysql > /dev/null 2>&1\`
+\$(id mysql) &> /dev/null
 if [ \$? -eq 1 ]
 then
   echo "Creating mysql user..."
@@ -174,56 +184,62 @@ then
   useradd -r -M -g mysql mysql
 fi
 $basedir/scripts/mysql_install_db --no-defaults --basedir=$basedir --datadir=$datadir
-chown -R mysql.mysql $datadir > /dev/null 2>&1
-chown mysql $rundir > /dev/null 2>&1
+chown -R mysql.mysql $datadir
+mkdir -p $rundir
+chown mysql $rundir
 
+if [ "\$os" == "ubuntu" ]
+then
 # disable apparmor
-ln -sf /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disabled/usr.sbin.mysqld > /dev/null 2>&1
-# rhel/SELinux, ignore error on debian/ubuntu
-setenforce 0 > /dev/null 2>&1
+[ -d /etc/apparmor.d ] && ln -sf /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disabled/usr.sbin.mysqld &> /dev/null
+else
+# disable SELinux
+command -v setenforce &>/dev/null && setenforce 0
+fi
 
-sudo sysctl -w vm.swappiness=0
-echo "vm.swappiness = 0" | sudo tee -a /etc/sysctl.conf
+sysctl -w vm.swappiness=0
+echo "vm.swappiness = 0" | sudo tee -a /etc/sysctl.conf &> /dev/null
 
-$stop_fw
+$stop_fw &> /dev/null
 
-service $mysql_service start > /dev/null 2>&1
+service $mysql_service start
 
 EOF
 
-  chmod +x bin/*.sh
+  chmod +x $bindir/*.sh
 
-  wsrep_urls=""
-  read -p "Where are your Galera hosts ($hosts) [ip1 ip2 ... ipN]: " x
-  [ ! -z "$x" ] && hosts="$x"
+  read -p "Where are your Galera hosts (${hosts[*]}) [ip1 ip2 ... ipN]: " x
+  [ ! -z "$x" ] && hosts=($x)
 
-  echo "${hosts[@]}" > etc/hosts
+  etcdir=$stagingdir/etc
+  echo "${hosts[@]}" > $etcdir/hosts
 
-  for h in $hosts
+  for h in ${hosts[*]}
   do
-    wsrep_urls+="gcomm://$h:4567,"
     ssh-keyscan -t rsa $h >> $HOME/.ssh/known_hosts
   done
-  wsrep_urls=${wsrep_urls%,}
 
-  sed -i "s|^wsrep_urls.*=*|wsrep_urls = $wsrep_urls|" $my_cnf
-  sed -i "s|^wsrep_provider.*=*|wsrep_provider = $wsrep_provider|" $my_cnf
+  IFS_DEF=$IFS
+  IFS=","
+  wsrep_cluster_address="gcomm://${hosts[*]}"
+  IFS=$IFS_DEF
+
+  sed "s|^.*wsrep_cluster_address.*=.*|wsrep_cluster_address = $wsrep_cluster_address|" $etcdir/my.cnf
+  sed "s|^wsrep_provider.*=.*|wsrep_provider = $wsrep_provider|" $etcdir/my.cnf
 
   read -p "Name your Galera Cluster ($wsrep_cluster_name): " x
   [ ! -z $x ] && wsrep_cluster_name=$x
 
-  read -p "SST method [mysqldump|rsync|xtrabackup] ($wsrep_sst_method): " x
+  read -p "SST method [rsync|xtrabackup] ($wsrep_sst_method): " x
   [ ! -z $x ] && wsrep_sst_method=$x
 
   read -p "Writeset slaves/parallel replication ($wsrep_slave_threads): " x
   [ ! -z $x ] && wsrep_slave_threads=$x
 
-  sed -i "s|^wsrep_cluster_name.*=*|wsrep_cluster_name = $wsrep_cluster_name|" $my_cnf
-  sed -i "s|^wsrep_sst_method.*=*|wsrep_sst_method = $wsrep_sst_method|" $my_cnf
-  sed -i "s|^wsrep_slave_threads.*=*|wsrep_slave_threads = $wsrep_slave_threads|" $my_cnf
-}
+  sed "s|^wsrep_cluster_name.*=.*|wsrep_cluster_name = $wsrep_cluster_name|" $etcdir/my.cnf
+  sed "s|^wsrep_sst_method.*=.*|wsrep_sst_method = $wsrep_sst_method|" $etcdir/my.cnf
+  sed "s|^wsrep_slave_threads.*=.*|wsrep_slave_threads = $wsrep_slave_threads|" $etcdir/my.cnf
 
-gen_tarball () {
   read -p "SSH user ($user): " x
   [ ! -z "$x" ] && user=$x
 
@@ -233,16 +249,11 @@ gen_tarball () {
   read -p "SSH port ($port): " x
   [ ! -z "$x" ] && port=$x
 
-  # make package
-  echo "Creating tarball..."
-  rm -f etc/config
-  tar zcvf galera.tgz repo etc bin &> /dev/null
-
-  sudo=sudo
+  sudo="sudo"
   [ $user == "root" ] && sudo=""
   cat > etc/config << EOF
 os=$os
-wsrep_url=$wsrep_urls
+wsrep_cluster_address=$wsrep_cluster_address
 ssh_key=$ssh_key
 user=$user
 port=$port
@@ -262,43 +273,51 @@ wsrep_cluster_name=$wsrep_cluster_name
 wsrep_sst_method=$wsrep_sst_method
 wsrep_slave_threads=$wsrep_slave_threads
 EOF
+
+}
+
+gen_tarball () {
+
+  # make package
+  echo "Creating tarball..."
+  cd $stagingdir
+  tar zcf galera.tgz repo etc bin
+  cd ..
 }
 
 deploy_galera () {
-  hosts=`cat etc/hosts`
-  . etc/config
+  source etc/config
+
+  cd $stagingdir
+  hosts=$(cat etc/hosts)
+
 
   private_key=${ssh_key%.pub}
   hosts=($hosts)
-  init_urls="gcomm://"
-
   for (( i=0; i < ${#hosts[@]}; i++ ))
   do
     h=${hosts[$i]}
-	echo "-- Bootstraping $h..."
-	scp -i $private_key -q -P $port galera.tgz $user@$h:~/
-    {
-	  #[ -f $ssh_key ] && ssh -i $private_key -t -p $port $user@$h 'cat >> ~/.ssh/authorized_keys' < $ssh_key
-	  echo "mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera"
-	  if (( $i == 0))
-	  then
-	  # first node, initialize the cluster
-		echo "sed -i.org 's|^wsrep_urls.*=*|wsrep_urls = $init_urls|' ~/galera/etc/my.cnf"
-	  fi
-	  echo "echo -- Installing wsrep provider library"
-	  echo "galera/bin/install_wsrep.sh"
-	  echo "echo -- Installing Galera for MySQL"
-	  echo "galera/bin/install_mysql_galera.sh"
-	  if (( $i == 0 ))
-	  then
-		# revert back wsrep_urls for first node
-		echo "cp -f ~/galera/etc/my.cnf.org /etc/my.cnf"
-	  fi
-	  # give the instance some time to come up
-	  sleep 5
-	  echo "rm -rf galera*"
-	  echo "echo -- $h completed"
-    } | ssh -i $private_key -t -p $port $user@$h "$sudo bash -s"
+    echo "*** Bootstraping $h..."
+    command -v ssh-copy-id &>/dev/null && ssh-copy-id -i $private_key "$user@$h -p $port" &> /dev/null
+    scp -i $private_key -q -P $port galera.tgz $user@$h:~/
+    ssh -i $private_key -t -p $port $user@$h 'mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera'
+    if (( $i == 0))
+    then
+      # first node, initialize the cluster
+      ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf; sed -i.org 's|^.*wsrep_cluster_address.*=.*|wsrep_cluster_address = gcomm://|' ~/galera/etc/my.cnf"
+    fi
+    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_wsrep.sh"
+    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh"
+
+    if (( $i == 0 ))
+    then
+      echo "*** Initializing cluster... "
+      # give the instance some time to come up
+      sleep 5
+      # revert back wsrep_cluster_address for the first node
+      ssh -i $private_key -t -p $port $user@$h "$sudo cp -f ~/galera/etc/my.cnf.org /etc/my.cnf"
+    fi
+    echo "*** $h completed"
   done
 
   read -p "Do you want to secure your Galera cluster (y/N): " x
@@ -312,13 +331,14 @@ DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.
 DROP DATABASE test; DELETE FROM mysql.db WHERE DB='test' OR DB='test\\_%';
 FLUSH PRIVILEGES;
 EOF
-    echo "Securing MySQL..."
     h=${hosts[0]}
+    echo "*** Securing MySQL ($h)..."
     scp -i $private_key -q -P $port secure.sql $user@$h:~/
-    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql ; rm -f secure.sql"
+    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql; rm ~/secure.sql"
   fi
 
-  echo "Galera Cluster for MySQL installed..."
+  cd ..
+  echo "*** Galera Cluster for MySQL installed..."
 }
 
 # main
@@ -326,16 +346,31 @@ echo "!! Running this Galera bootstrap will wipe out any current MySQL installat
 read -p "Continue? (Y/n): " x
 [[ "$x" == ["nN"] ]] && exit 1
 
+mkdir -p $stagingdir/etc
+cp $my_cnf $stagingdir/etc/
+
 stime=$(date +'%s')
 
-ask "Download Galera packages (Y/n): " "y" && download_packages
+if ask "Download Galera packages (Y/n): " "y"
+then
+  download_packages
+fi
 
-ask "Generate install scripts (Y/n): " "y" && gen_scripts
+if ask "Generate install scripts and my.cnf file (Y/n): " "y"
+then
+  gen_scripts
+fi
 
-ask "Generate deployment tarball (Y/n): " "y" && gen_tarball
+if ask "Generate distribution tarball (Y/n): " "y"
+then
+  gen_tarball
+fi
 
-ask "Deploy Galera (Y/n): " "y" && deploy_galera
+if ask "Deploy Galera cluster (Y/n): " "y"
+then
+  deploy_galera
+fi
 
 etime=$(date +'%s')
 secs=$((etime - stime))
-printf "Done...%dh:%dm:%ds\n" $(($secs/3600)) $(($secs%3600/60)) $(($secs%60))
+printf ""%dh:%dm:%ds"\n" $(($secs/3600)) $(($secs%3600/60)) $(($secs%60))

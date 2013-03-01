@@ -1,7 +1,7 @@
 dbtools
 =======
 
-Set of simple db tools to (for example) easily deploy MongoDB (replicasets and sharding) or Galera Cluster for MySQL for you dev or test environment.
+Set of simple db tools to (for example) easily deploy MongoDB (replicasets and sharding) or Galera Cluster for MySQL for your dev or test environment.
 
 I'm using these scripts with my [lxctools][1] to quickly setup and tear down DB clusters on my lxc containers.
 
