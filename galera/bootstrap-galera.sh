@@ -202,7 +202,7 @@ echo "vm.swappiness = 0" | sudo tee -a /etc/sysctl.conf &> /dev/null
 
 $stop_fw &> /dev/null
 
-service $mysql_service start
+service $mysql_service start "$@"
 
 EOF
 
@@ -291,7 +291,6 @@ deploy_galera () {
   cd $stagingdir
   hosts=$(cat etc/hosts)
 
-
   private_key=${ssh_key%.pub}
   hosts=($hosts)
   for (( i=0; i < ${#hosts[@]}; i++ ))
@@ -304,18 +303,13 @@ deploy_galera () {
     if (( $i == 0))
     then
       # first node, initialize the cluster
-      ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf; sed -i.org 's|^.*wsrep_cluster_address.*=.*|wsrep_cluster_address = gcomm://|' ~/galera/etc/my.cnf"
-    fi
-    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_wsrep.sh"
-    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh"
-
-    if (( $i == 0 ))
-    then
       echo "*** Initializing cluster... "
-      # give the instance some time to come up
+      ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf"
+      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh --wsrep-cluster-address='gcomm://'"
+      # give the instance some time to start up
       sleep 5
-      # revert back wsrep_cluster_address for the first node
-      ssh -i $private_key -t -p $port $user@$h "$sudo cp -f ~/galera/etc/my.cnf.org /etc/my.cnf"
+    else
+      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh"
     fi
     echo "*** $h completed"
   done
@@ -328,7 +322,7 @@ deploy_galera () {
 UPDATE mysql.user SET Password=PASSWORD('$x') WHERE User='root';
 DELETE FROM mysql.user WHERE User='';
 DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
-DROP DATABASE test; DELETE FROM mysql.db WHERE DB='test' OR DB='test\\_%';
+DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE DB='test' OR DB='test\\_%';
 FLUSH PRIVILEGES;
 EOF
     h=${hosts[0]}
