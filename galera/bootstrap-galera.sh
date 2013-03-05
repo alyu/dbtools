@@ -202,7 +202,7 @@ echo "vm.swappiness = 0" | sudo tee -a /etc/sysctl.conf &> /dev/null
 
 $stop_fw &> /dev/null
 
-service $mysql_service start "$@"
+service $mysql_service start "\$@"
 
 EOF
 
