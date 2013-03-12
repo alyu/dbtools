@@ -51,9 +51,9 @@ hosts=""
 [ -e etc/config ] && . etc/config
 [ -e $stagingdir/etc/hosts ] && hosts=($(cat $stagingdir/etc/hosts))
 
-mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz"
-wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-amd64.deb"
-wsrep_provider_dn_redhat="https://launchpad.net/galera/2.x/23.2.2/+download/galera-23.2.2-1.rhel5.x86_64.rpm"
+mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.29-23.7.3/+download/mysql-5.5.29_wsrep_23.7.3-linux-x86_64.tar.gz"
+wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.4/+download/galera-23.2.4-amd64.deb"
+wsrep_provider_dn_redhat="https://launchpad.net/galera/2.x/23.2.4/+download/galera-23.2.4-1.rhel5.x86_64.rpm"
 xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
 xtra_packages_redhat="openssl psmisc libaio rsync nc wget"
 wsrep_provider=/usr/lib/galera/libgalera_smm.so
