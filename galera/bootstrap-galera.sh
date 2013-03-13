@@ -300,6 +300,7 @@ deploy_galera () {
     command -v ssh-copy-id &>/dev/null && ssh-copy-id -i $private_key "$user@$h -p $port" &> /dev/null
     scp -i $private_key -q -P $port galera.tgz $user@$h:~/
     ssh -i $private_key -t -p $port $user@$h 'mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera'
+    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_wsrep.sh"
     if (( $i == 0))
     then
       # first node, initialize the cluster
