@@ -301,11 +301,12 @@ deploy_galera () {
     scp -i $private_key -q -P $port galera.tgz $user@$h:~/
     ssh -i $private_key -t -p $port $user@$h 'mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera'
     ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_wsrep.sh"
+    ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf"
+    ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_incoming_address.*=.*|wsrep_incoming_address = $h|\" ~/galera/etc/my.cnf"
     if (( $i == 0))
     then
       # first node, initialize the cluster
       echo "*** Initializing cluster... "
-      ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf"
       ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh --wsrep-cluster-address='gcomm://'"
       # give the instance some time to start up
       sleep 5
