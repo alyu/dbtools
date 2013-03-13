@@ -43,7 +43,7 @@ wsrep_slave_threads=1
 
 os=ubuntu
 user="$USER"
-ssh_key=/home/ubuntu/.ssh/id_rsa.pub
+ssh_key="$HOME/$USER/.ssh/id_rsa.pub"
 port=22
 
 stagingdir=.stage
@@ -76,7 +76,6 @@ download_packages() {
     xtra_packages="$xtra_packages_redhat"
     wsrep_provider="$wsrep_provider_redhat"
     stop_fw="$stop_fw_redhat"
-    [ $user != "root" ] && user=root && ssh_key=/root/.ssh/id_rsa.pub
   fi
 
   read -p "Galera MySQL tarball ($mysql_galera_dn): " x
@@ -151,7 +150,7 @@ rel_dir=`dirname "$0"`
 root_dir=\$(dirname \$PWD/\$(dirname "\$BASH_SOURCE"))
 echo "Killing any MySQL server running..."
 killall -9 mysqld_safe mysqld rsync
-echo "Wiping datadir and existing my.cnf files..."
+echo "Erasing datadir and existing my.cnf file..."
 rm -rf $datadir/*
 rm -rf /etc/my.cnf /etc/mysql
 
@@ -299,10 +298,13 @@ deploy_galera () {
     echo "*** Bootstraping $h..."
     command -v ssh-copy-id &>/dev/null && ssh-copy-id -i $private_key "$user@$h -p $port" &> /dev/null
     scp -i $private_key -q -P $port galera.tgz $user@$h:~/
-    ssh -i $private_key -t -p $port $user@$h 'mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera'
-    ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_wsrep.sh"
-    ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|\" ~/galera/etc/my.cnf"
-    ssh -i $private_key -t -p $port $user@$h "sed -i \"s|^.*wsrep_incoming_address.*=.*|wsrep_incoming_address = $h|\" ~/galera/etc/my.cnf"
+    cat > sed.sh << EOF
+mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera
+$sudo galera/bin/install_wsrep.sh
+sed -i "s|^.*wsrep_node_name.*=.*|wsrep_node_name = $h|" ~/galera/etc/my.cnf
+sed -i "s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|" ~/galera/etc/my.cnf
+EOF
+    ssh -i $private_key -p $port $user@$h 'bash -s' < sed.sh
     if (( $i == 0))
     then
       # first node, initialize the cluster
@@ -315,6 +317,7 @@ deploy_galera () {
     fi
     echo "*** $h completed"
   done
+  rm -f sed.sh
 
   read -p "Do you want to secure your Galera cluster (y/N): " x
   if [[ "$x" == ["yY"] ]]
@@ -330,7 +333,7 @@ EOF
     h=${hosts[0]}
     echo "*** Securing MySQL ($h)..."
     scp -i $private_key -q -P $port secure.sql $user@$h:~/
-    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql; $sudo rm ~/secure.sql"
+    ssh -i $private_key -t -p $port $user@$h "$basedir/bin/mysql -uroot -h127.0.0.1 < ~/secure.sql; $sudo rm -f ~/secure.sql"
   fi
 
   cd ..
