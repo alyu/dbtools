@@ -43,7 +43,7 @@ wsrep_slave_threads=1
 
 os=ubuntu
 user="$USER"
-ssh_key="$HOME/$USER/.ssh/id_rsa.pub"
+ssh_key="$HOME/.ssh/id_rsa.pub"
 port=22
 
 stagingdir=.stage
@@ -58,7 +58,6 @@ xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
 xtra_packages_redhat="openssl psmisc libaio rsync nc wget"
 wsrep_provider=/usr/lib/galera/libgalera_smm.so
 wsrep_provider_redhat=/usr/lib64/galera/libgalera_smm.so
-[ $user != "root" ] && ssh_key=/home/$user/.ssh/id_rsa.pub
 
 ask() {
   read -p "$1" x
@@ -76,6 +75,7 @@ download_packages() {
     xtra_packages="$xtra_packages_redhat"
     wsrep_provider="$wsrep_provider_redhat"
     stop_fw="$stop_fw_redhat"
+    mysql_service=mysqld
   fi
 
   read -p "Galera MySQL tarball ($mysql_galera_dn): " x
@@ -99,6 +99,7 @@ gen_scripts() {
   [ ! -z "$x" ] && installdir=$x
 
   basedir=$installdir/mysql
+  echo "Setting MySQL base dir to $basedir"
 
   read -p "MySQL data dir ($datadir): " x
   [ ! -z "$x" ] && datadir=$x
@@ -120,7 +121,7 @@ gen_scripts() {
   bindir=$stagingdir/bin
   mkdir -p $bindir
 
-  cat > "$bindir/install_wsrep.sh" << EOF
+  cat > "$bindir/install_galera.sh" << EOF
 #!/bin/bash
 
 echo "*** Installing Galera wsrep provider"
@@ -139,7 +140,7 @@ yum -y localinstall \$root_dir/repo/$wsrep_provider_file
 fi
 EOF
 
-  cat > "$bindir/install_mysql_galera.sh" << EOF
+  cat > "$bindir/install_mysql_wsrep.sh" << EOF
 #!/bin/bash
 
 echo "*** Installing Galera MySQL"
@@ -151,11 +152,12 @@ root_dir=\$(dirname \$PWD/\$(dirname "\$BASH_SOURCE"))
 echo "Killing any MySQL server running..."
 killall -9 mysqld_safe mysqld rsync
 echo "Erasing datadir and existing my.cnf file..."
-rm -rf $datadir/*
+[ -d $datadir ] && rm -rf $datadir
+[ -d $basedir ] && rm -rf $basedir
 rm -rf /etc/my.cnf /etc/mysql
 
 mkdir -p $installdir
-rm -rf $installdir/${mysql_galera_tar%.tar.gz}
+[ -d $installdir ] &&  rm -rf $installdir/${mysql_galera_tar%.tar.gz}
 if [ "\$os" == "ubuntu" ]
 then
 apt-get -y remove --purge mysql-server mysql-client mysql-common
@@ -168,7 +170,7 @@ yum -y install $xtra_packages
 fi
 
 zcat \$root_dir/repo/$mysql_galera_tar | tar xf - -C $installdir
-ln -sf $installdir/${mysql_galera_tar%.tar.gz} $basedir
+ln -sfn $installdir/${mysql_galera_tar%.tar.gz} $basedir
 
 cp -f \$root_dir/etc/my.cnf /etc/
 cp -f $basedir/support-files/mysql.server /etc/init.d/$mysql_service
@@ -190,7 +192,7 @@ chown mysql $rundir
 if [ "\$os" == "ubuntu" ]
 then
 # disable apparmor
-[ -d /etc/apparmor.d ] && ln -sf /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disabled/usr.sbin.mysqld &> /dev/null
+[ -d /etc/apparmor.d ] && ln -sfn /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disabled/usr.sbin.mysqld &> /dev/null
 else
 # disable SELinux
 command -v setenforce &>/dev/null && setenforce 0
@@ -209,6 +211,7 @@ EOF
 
   read -p "Where are your Galera hosts (${hosts[*]}) [ip1 ip2 ... ipN]: " x
   [ ! -z "$x" ] && hosts=($x)
+  [ -z "$x" ] && echo "Need some hosts..." && exit
 
   etcdir=$stagingdir/etc
   echo "${hosts[@]}" > $etcdir/hosts
@@ -300,7 +303,7 @@ deploy_galera () {
     scp -i $private_key -q -P $port galera.tgz $user@$h:~/
     cat > sed.sh << EOF
 mkdir -p ~/galera && zcat ~/galera.tgz | tar xf - -C ~/galera
-$sudo galera/bin/install_wsrep.sh
+$sudo galera/bin/install_galera.sh
 sed -i "s|^.*wsrep_node_name.*=.*|wsrep_node_name = $h|" ~/galera/etc/my.cnf
 sed -i "s|^.*wsrep_node_address.*=.*|wsrep_node_address = $h|" ~/galera/etc/my.cnf
 EOF
@@ -309,11 +312,11 @@ EOF
     then
       # first node, initialize the cluster
       echo "*** Initializing cluster... "
-      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh --wsrep-cluster-address='gcomm://'"
+      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_wsrep.sh --wsrep-cluster-address='gcomm://'"
       # give the instance some time to start up
       sleep 5
     else
-      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_galera.sh"
+      ssh -i $private_key -t -p $port $user@$h "$sudo galera/bin/install_mysql_wsrep.sh"
     fi
     echo "*** $h completed"
   done
