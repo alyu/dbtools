@@ -28,7 +28,7 @@ alias sed="sed -i"
 [[ $OSTYPE =~ ^darwin ]] && alias sed="sed -i ''"
 
 installdir=/usr/local
-datadir=/usr/local/lib/mysql
+datadir=/var/lib/mysql
 rundir=/var/run/mysqld
 innodb_buffer_pool_size=2G
 innodb_log_file_size=1G
