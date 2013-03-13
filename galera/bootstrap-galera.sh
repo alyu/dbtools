@@ -211,7 +211,6 @@ EOF
 
   read -p "Where are your Galera hosts (${hosts[*]}) [ip1 ip2 ... ipN]: " x
   [ ! -z "$x" ] && hosts=($x)
-  [ -z "$x" ] && echo "Need some hosts..." && exit
 
   etcdir=$stagingdir/etc
   echo "${hosts[@]}" > $etcdir/hosts
@@ -327,10 +326,11 @@ EOF
   then
     read -p "Enter a new MySQL root password: " x
     cat > "secure.sql" << EOF
-UPDATE mysql.user SET Password=PASSWORD('$x') WHERE User='root';
 DELETE FROM mysql.user WHERE User='';
 DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
 DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE DB='test' OR DB='test\\_%';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY '$x' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' IDENTIFIED BY '$x' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 EOF
     h=${hosts[0]}
