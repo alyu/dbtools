@@ -7,7 +7,7 @@
 [ ! $(command -v pigz) ] && echo "Unable to find pigz. Please install it first." && exit 1
 [ ! $(command -v pv) ]  && echo "Unable to find pv. Please install it first." && exit 1
 
-[ ! -d "$1" ] && echo "$1 is not a directory!" && exit
+[[ ! -d "$1" && ! -L $1 ]] && echo "$1 is not a directory!" && exit
 
 port=8888
 c=5
