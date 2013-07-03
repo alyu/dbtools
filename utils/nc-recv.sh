@@ -12,7 +12,7 @@ port=8888
 [ $# -gt 1 ] && port=$2
 host=$1
 
-if [ $host = "localhost"]
+if [ $host = "localhost" ]
 then
 echo "Receiving on $port..."
 [[ $OSTYPE =~ ^darwin ]] && nc -l $port | pigz -d | pv -tab | tee >(shasum > /dev/stderr) |tar xf -
