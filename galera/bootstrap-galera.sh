@@ -54,7 +54,7 @@ hosts=""
 mysql_galera_dn="https://launchpad.net/codership-mysql/5.5/5.5.29-23.7.3/+download/mysql-5.5.29_wsrep_23.7.3-linux-x86_64.tar.gz"
 wsrep_provider_dn="https://launchpad.net/galera/2.x/23.2.4/+download/galera-23.2.4-amd64.deb"
 wsrep_provider_dn_redhat="https://launchpad.net/galera/2.x/23.2.4/+download/galera-23.2.4-1.rhel5.x86_64.rpm"
-xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat wget"
+xtra_packages="libssl0.9.8 psmisc libaio1 rsync netcat netcat-traditional wget"
 xtra_packages_redhat="openssl psmisc libaio rsync nc wget"
 wsrep_provider=/usr/lib/galera/libgalera_smm.so
 wsrep_provider_redhat=/usr/lib64/galera/libgalera_smm.so
@@ -133,7 +133,7 @@ then
 dpkg -r galera
 dpkg -p galera
 dpkg -i \$root_dir/repo/$wsrep_provider_file
-apt-get -f install
+apt-get -f -y install
 else
 yum -y remove galera
 yum -y localinstall \$root_dir/repo/$wsrep_provider_file
